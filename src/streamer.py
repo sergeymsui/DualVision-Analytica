@@ -12,7 +12,6 @@ from gi.repository import Gst, GstRtspServer, GObject, GLib
 image_width = 640
 image_height = 512
 stream_uri = "/video_stream"
-images = []
 
 # Sensor Factory class which inherits the GstRtspServer base class and add
 # properties to it.
