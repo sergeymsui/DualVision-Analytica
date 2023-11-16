@@ -1,6 +1,6 @@
 
-RGB/*
-TCM/*
+data/RGB/*
+data/TCM/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

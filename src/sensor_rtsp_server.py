@@ -5,58 +5,71 @@ import os
 from os import listdir
 from os.path import isfile, join
 
+import threading
+from threading import Lock
+
 gi.require_version('Gst', '1.0')
 gi.require_version('GstRtspServer', '1.0')
 from gi.repository import Gst, GstRtspServer, GObject, GLib
 
-image_width = 640
-image_height = 512
-stream_uri = "/video_stream"
+
+frame_number = 0
+mutex = Lock()
 
 # Sensor Factory class which inherits the GstRtspServer base class and add
 # properties to it.
 class SensorFactory(GstRtspServer.RTSPMediaFactory):
-    def __init__(self, **properties):
+    def __init__(self, path, **properties):
         super(SensorFactory, self).__init__(**properties)
         
-        self.images = []
-        self.load_images()
-        print("== upload ==")
-        
-        self.frame_pointer = 0
+        self.path = path
         self.number_frames = 0
-        self.fps = 30
+        self.fps = 10
+
+        self.image_width = 640
+        self.image_height = 512
         
-        self.duration = 1 / self.fps * Gst.SECOND  # duration of a frame in nanoseconds
-        self.launch_string = 'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME ' \
+        self.duration = 1 / self.fps * Gst.SECOND  # duration of a frame in nanoseconds        
+        self.launch_string = 'appsrc name=source is-live=true block=false format=GST_FORMAT_TIME ' \
                              'caps=video/x-raw,format=BGR,width={},height={},framerate={}/1 ' \
                              '! videoconvert ! video/x-raw,format=I420 ' \
                              '! x264enc speed-preset=ultrafast tune=zerolatency ' \
                              '! rtph264pay config-interval=1 name=pay0 pt=96' \
-                             .format(image_width, image_height, self.fps)
+                             .format(self.image_width, self.image_height, self.fps)
         
-    def load_images(self):
-        path = 'RGB'
-        onlyfiles = [f for f in listdir(path) if isfile(join(path, f))]
+    def load(self):
+        onlyfiles = [f for f in listdir(self.path) if isfile(join(self.path, f))]
         file_paths = [str(n) for n in onlyfiles]
         file_paths.sort()
 
-        os.chdir(path)
+        os.chdir(self.path)
 
-        max_items = 300
+        self.images = []
         for image in file_paths:
             self.images.append(cv2.imread(image))
-            if len(self.images) > max_items:
+            if len(self.images) > 300:
                 break
+
+        return self
 
     # method to capture the video feed from the camera and push it to the
     # streaming buffer.
     def on_need_data(self, src, length):
-        self.frame_pointer = self.frame_pointer + 1 if self.frame_pointer < len(self.images)-1 else 0
-        frame = self.images[self.frame_pointer]
+
+        mutex.acquire()
+
+        global frame_number
+        frame_pointer = frame_number - (300 * int(frame_number/300))
+        frame_number = frame_number + 1
+
+        mutex.release()
+
+        # self.frame_pointer = self.frame_pointer + 1 if self.frame_pointer < len(self.images)-1 else 0
+        frame = self.images[frame_pointer]
+
         # It is better to change the resolution of the camera 
         # instead of changing the image shape as it affects the image quality.
-        frame = cv2.resize(frame, (image_width, image_height), interpolation = cv2.INTER_LINEAR)
+        frame = cv2.resize(frame, (self.image_width, self.image_height), interpolation = cv2.INTER_AREA)
 
         data = frame.tobytes()
         buf = Gst.Buffer.new_allocate(None, len(data), None)
@@ -66,31 +79,12 @@ class SensorFactory(GstRtspServer.RTSPMediaFactory):
         buf.pts = buf.dts = int(timestamp)
         buf.offset = timestamp
         self.number_frames += 1
-        frame_counter = self.number_frames
         retval = src.emit('push-buffer', buf)
         print('pushed buffer, frame {}, duration {} ns, durations {} s'.format(self.number_frames,
                                                                                        self.duration,
                                                                                        self.duration / Gst.SECOND))
-
         if retval != Gst.FlowReturn.OK:
             print(retval)
-
-        if frame_counter % 60 == 0: 
-            raw_data_location = frame
-            raw_data_extension = ".jpg"
-
-            # replace * with your model version number for inference
-            inference_endpoint = ["obs-3", 16]
-            upload_destination = "obs-3"
-
-                #     conditionals = {
-                #         "required_objects_count" : 0,
-                #         "required_class_count": 0,
-                #         "target_classes": [],
-                #         "minimum_size_requirement" : float('-inf'),
-                #         "maximum_size_requirement" : float('inf'),
-                #         "confidence_interval" : [10,90],
-                #     }
 
 
     # attach the launch string to the override method
@@ -106,20 +100,18 @@ class SensorFactory(GstRtspServer.RTSPMediaFactory):
 
 # Rtsp server implementation where we attach the factory sensor with the stream uri
 class GstServer(GstRtspServer.RTSPServer):
-    def __init__(self, **properties):
+    def __init__(self, port, refs, **properties):
         super(GstServer, self).__init__(**properties)
-        self.factory = SensorFactory()
-        self.factory.set_shared(True)
-        self.set_service(str(8554))
-        self.get_mount_points().add_factory(stream_uri, self.factory)
+
+        for it in refs:
+            stream_url = it['url']
+            stream_path = it['path']
+
+            self.factory = SensorFactory(stream_path).load()
+            self.factory.set_shared(True)
+            self.get_mount_points().add_factory(stream_url, self.factory)
+        
+        self.set_service(port)
         self.attach(None)
-
-def main():
-    GObject.threads_init()
-    Gst.init(None)
-    server = GstServer()
-    loop = GLib.MainLoop()
-    loop.run()
-
-if __name__ == "__main__":
-    main()
+        
+        
