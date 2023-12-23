@@ -9,12 +9,8 @@ from gi.repository import Gst, GObject, GLib
 
 def main():
     Gst.init(None)
-    
-    path_rgb = os.path.abspath("./data/RGB")
-    path_tcm = os.path.abspath("./data/TCM")
 
-    server_rgb = GstServer("8554", path_rgb, '/video_stream')
-    server_tcm = GstServer("8556", path_tcm, '/thermal_stream')
+    server_rgb = GstServer("8558", '/video_stream')
 
     loop = GLib.MainLoop()
     loop.run()

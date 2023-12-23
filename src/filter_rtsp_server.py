@@ -18,10 +18,10 @@ class SensorFactory(GstRtspServer.RTSPMediaFactory):
         super(SensorFactory, self).__init__(**properties)
         
         self.cap_rgb = cv2.VideoCapture("rtsp://localhost:8554/video_stream")
-        self.cap_tcm = cv2.VideoCapture("rtsp://localhost:8554/thermal_stream")
+        self.cap_tcm = cv2.VideoCapture("rtsp://localhost:8556/thermal_stream")
 
         self.number_frames = 0
-        self.fps = 10
+        self.fps = 15
 
         self.image_width = 640
         self.image_height = 512
@@ -45,13 +45,13 @@ class SensorFactory(GstRtspServer.RTSPMediaFactory):
         frame_rgb = cv2.resize(frame_rgb, (self.image_width, self.image_height), interpolation = cv2.INTER_LINEAR)
         frame_tcm = cv2.resize(frame_tcm, (self.image_width, self.image_height), interpolation = cv2.INTER_LINEAR)
 
-        gray_frame_rgb = cv2.cvtColor(frame_rgb, cv2.COLOR_BGR2HLS)
+        alpha = 0.5
+        beta = 1 - alpha
 
-        # gray_frame_tcm = cv2.cvtColor(frame_tcm, cv2.COLOR_BGR2LUV)
+        # Наложение изображений
+        result = cv2.addWeighted(frame_rgb, alpha, frame_tcm, beta, 0)
 
-        # result_frame = cv2.add(gray_frame_rgb, gray_frame_tcm)
-
-        data = gray_frame_rgb.tobytes()
+        data = result.tobytes()
 
         buf = Gst.Buffer.new_allocate(None, len(data), None)
         buf.fill(0, data)
@@ -78,7 +78,7 @@ class SensorFactory(GstRtspServer.RTSPMediaFactory):
         appsrc.connect('need-data', self.on_need_data)
 
 class GstServer(GstRtspServer.RTSPServer):
-    def __init__(self, port, **properties):
+    def __init__(self, port, stream_uri, **properties):
         super(GstServer, self).__init__(**properties)
         self.factory = SensorFactory()
         self.factory.set_shared(True)
