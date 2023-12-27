@@ -1,7 +1,7 @@
 
 import os
 import gi
-from sensor_rtsp_server import GstServer
+from mid_capture_wrapper_server import GstServer
 
 gi.require_version('Gst', '1.0')
 gi.require_version('GstRtspServer', '1.0')

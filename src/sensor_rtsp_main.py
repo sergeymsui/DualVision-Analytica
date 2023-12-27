@@ -13,8 +13,8 @@ def main():
     path_rgb = os.path.abspath("./data/RGB")
     path_tcm = os.path.abspath("./data/TCM")
 
-    server_rgb = GstServer("8554", path_rgb, '/video_stream')
-    server_tcm = GstServer("8556", path_tcm, '/thermal_stream')
+    server_rgb = GstServer("8554", "/home/user/git/yolov8/runs/detect/inference", '/video_stream')
+    # server_tcm = GstServer("8556", path_tcm, '/thermal_stream')
 
     loop = GLib.MainLoop()
     loop.run()
